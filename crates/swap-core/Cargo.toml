@@ -1,0 +1,22 @@
+[package]
+name = "swap-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Core business logic for Swap workout tracking app"
+
+[lib]
+crate-type = ["lib", "cdylib", "staticlib"]
+name = "swap_core"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+uniffi = { workspace = true }
+
+[build-dependencies]
+uniffi = { workspace = true, features = ["build"] }
