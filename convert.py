@@ -25,8 +25,6 @@ from mdit_py_plugins.tasklists import tasklists_plugin
 # ---------------------------------------------------------------------------
 # Colour palette
 # ---------------------------------------------------------------------------
-CODE_BG = RGBColor(0xF6, 0xF8, 0xFA)       # light grey for code blocks
-INLINE_CODE_BG = RGBColor(0xEF, 0xF1, 0xF3)
 QUOTE_BAR = RGBColor(0xD0, 0xD7, 0xDE)     # left border on blockquotes
 CALLOUT_COLOURS = {
     "note":      RGBColor(0x08, 0x80, 0xFF),
@@ -308,7 +306,6 @@ class InlineRenderer:
         run = self.para.add_run(content)
         run.font.name = "Consolas"
         run.font.size = Pt(10)
-        _run_shading(run, INLINE_CODE_BG)
 
     def _inline_image(self, src: str, alt: str):
         if src and os.path.isfile(src):
@@ -620,7 +617,6 @@ class MarkdownToDocx:
         lines = content.splitlines() or [""]
         for idx, line in enumerate(lines):
             para = self.doc.add_paragraph(style="CodeBlock")
-            _para_shading(para, CODE_BG)
             if idx == 0:
                 _set_para_spacing(para, before=80, after=0)
             elif idx == len(lines) - 1:
