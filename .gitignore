@@ -23,3 +23,7 @@ target
 # Markdown converter output artifacts
 sample_out.docx
 *.docx
+
+# Python
+__pycache__/
+*.py[cod]
