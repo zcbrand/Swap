@@ -170,9 +170,10 @@ def preprocess_obsidian(text: str) -> tuple[str, dict]:
     """
     Transform Obsidian-specific syntax into something markdown-it understands,
     or into special markers we can detect during rendering.
+    Strips all hidden / non-printing content before conversion.
     Returns (transformed_text, metadata_dict).
     """
-    # --- Strip YAML frontmatter ---
+    # --- Strip YAML frontmatter (--- delimiters) ---
     meta = {}
     fm_match = re.match(r"^---\s*\n(.*?)\n---\s*\n", text, re.DOTALL)
     if fm_match:
@@ -181,6 +182,30 @@ def preprocess_obsidian(text: str) -> tuple[str, dict]:
                 k, _, v = line.partition(":")
                 meta[k.strip()] = v.strip()
         text = text[fm_match.end():]
+
+    # --- Strip TOML frontmatter (+++ delimiters) ---
+    toml_match = re.match(r"^\+\+\+\s*\n(.*?)\n\+\+\+\s*\n", text, re.DOTALL)
+    if toml_match:
+        text = text[toml_match.end():]
+
+    # --- Strip HTML comments <!-- ... --> ---
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+
+    # --- Strip <script> blocks ---
+    text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL | re.IGNORECASE)
+
+    # --- Strip <style> blocks ---
+    text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL | re.IGNORECASE)
+
+    # --- Strip <details>/<summary> wrapper tags, keep inner content ---
+    text = re.sub(r"<summary[^>]*>.*?</summary>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"</?details[^>]*>", "", text, flags=re.IGNORECASE)
+
+    # --- Strip zero-width and other invisible Unicode characters ---
+    # Zero-width space (U+200B), zero-width non-joiner (U+200C),
+    # zero-width joiner (U+200D), word joiner (U+2060), BOM (U+FEFF),
+    # soft hyphen (U+00AD), left/right marks (U+200E/F)
+    text = re.sub(r"[­​‌‍‎‏⁠﻿]", "", text)
 
     # --- Strip Obsidian comments %%...%% ---
     text = re.sub(r"%%.*?%%", "", text, flags=re.DOTALL)
@@ -298,6 +323,8 @@ class InlineRenderer:
         run.bold = self._bold
         run.italic = self._italic
         run.font.strike = self._strike
+        # Explicitly unset Word's hidden-text property so nothing is ever invisible
+        run.font.hidden = False
         if self._mark:
             run.font.highlight_color = None  # python-docx highlight enum doesn't do custom RGB
             _run_shading(run, HIGHLIGHT_BG)
