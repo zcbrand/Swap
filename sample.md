@@ -24,6 +24,12 @@ Here is a [link](https://example.com) and some ==highlighted text== (Obsidian).
 2. Second
 3. Third
 
+### Task List
+
+- [ ] An open task
+- [x] A completed task
+- [ ] Another open task
+
 ### Blockquote
 
 > This is a standard blockquote.
@@ -66,8 +72,11 @@ This document references [[Another Page]] and [[Some Note|a renamed link]].
 > [!WARNING]
 > Be careful with this setting.
 
-> [!TIP]
+> [!TIP] Custom titles work too
 > You can customise callout titles.
+
+> [!IMPORTANT]- Collapsible callout
+> Fold markers (`-` / `+`) are handled gracefully.
 
 > [!DANGER]
 > This action is irreversible.
