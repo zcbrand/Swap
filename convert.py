@@ -187,23 +187,32 @@ def preprocess_obsidian(text: str) -> tuple[str, dict]:
     # --- Strip Obsidian comments %%...%% ---
     text = re.sub(r"%%.*?%%", "", text, flags=re.DOTALL)
 
+    # --- Strip Obsidian block references (trailing ^block-id) ---
+    text = re.sub(r"[ \t]\^[A-Za-z0-9-]+$", "", text, flags=re.MULTILINE)
+
     # --- ==highlights== → <mark>text</mark> (HTML passthrough) ---
     text = re.sub(r"==(.+?)==", r"<mark>\1</mark>", text)
 
     # --- Obsidian callouts: > [!TYPE] → blockquote with CALLOUT: prefix ---
+    # The "\n>" keeps the title and body inside ONE blockquote (as separate
+    # paragraphs) so the body inherits the callout colour during rendering.
     def replace_callout(m):
         kind = m.group(1).lower()
-        title = m.group(2).strip() if m.group(2) else kind.upper()
-        return f"> CALLOUT:{kind}:{title}\n"
-    text = re.sub(r"^> \[!(\w+)\][ \t]*(.*)?$", replace_callout, text, flags=re.MULTILINE)
+        title = m.group(3).strip() if m.group(3) else ""
+        return f"> CALLOUT:{kind}:{title}\n>"
+    text = re.sub(r"^>\s*\[!([\w-]+)\]([-+]?)[ \t]*(.*)$", replace_callout, text, flags=re.MULTILINE)
+
+    # --- Embedded images ![[file.png]] and ![[file.png|300]] (before wikilinks) ---
+    text = re.sub(
+        r"!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]",
+        lambda m: f"![{m.group(1)}]({m.group(1)})",
+        text,
+    )
 
     # --- Wikilinks [[Page|alias]] and [[Page]] ---
     # Use angle-bracket URLs so spaces are valid CommonMark
     text = re.sub(r"\[\[([^\]|]+)\|([^\]]+)\]\]", lambda m: f"[{m.group(2)}](<{m.group(1)}>)", text)
     text = re.sub(r"\[\[([^\]]+)\]\]", lambda m: f"[{m.group(1)}](<{m.group(1)}>)", text)
-
-    # --- Embedded images ![[file.png]] ---
-    text = re.sub(r"!\[\[([^\]]+)\]\]", r"![\1](\1)", text)
 
     # --- Inline math $...$ → `...` (keep readable without LaTeX) ---
     text = re.sub(r"(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)", r"`\1`", text)
@@ -211,8 +220,8 @@ def preprocess_obsidian(text: str) -> tuple[str, dict]:
     text = re.sub(r"\$\$(.+?)\$\$", r"\n```math\n\1\n```\n", text, flags=re.DOTALL)
 
     # --- Obsidian tags #tag (not headings) – render as inline code ---
-    # Match #tag preceded by whitespace; headings use "# text" (space after #)
-    text = re.sub(r"(\s)#([A-Za-z][\w/-]*)", r"\1`#\2`", text)
+    # Match #tag at line start or after whitespace; headings use "# text"
+    text = re.sub(r"(^|\s)#([A-Za-z][\w/-]*)", r"\1`#\2`", text, flags=re.MULTILINE)
 
     return text, meta
 
@@ -280,12 +289,16 @@ class InlineRenderer:
             i += 1
 
     def _html_inline(self, html: str):
-        mark_open = re.match(r"<mark>", html)
-        mark_close = re.match(r"</mark>", html)
-        if mark_open:
+        if html.startswith("<mark>"):
             self._mark = True
-        elif mark_close:
+        elif html.startswith("</mark>"):
             self._mark = False
+        elif "<input" in html and 'type="checkbox"' in html:
+            checked = "checked" in html
+            run = self.para.add_run("☑" if checked else "☐")
+            run.font.size = Pt(12)
+            if checked:
+                run.font.color.rgb = RGBColor(0x0B, 0xA0, 0x60)
         # ignore other HTML
 
     def _text(self, content: str):
@@ -506,7 +519,10 @@ class MarkdownToDocx:
         return i, None
 
     def _walk_list_item(self, tokens, start: int, ordered: bool, level: int, counter: int) -> tuple[int, int]:
+        # Task-list items render their own ☐/☑ checkbox, so skip the bullet
+        is_task = "task-list-item" in str(dict(tokens[start].attrs or {}).get("class", ""))
         i = start + 1
+        first_para = True
         while i < len(tokens):
             tok = tokens[i]
             if tok.type == "list_item_close":
@@ -520,8 +536,10 @@ class MarkdownToDocx:
                 para.paragraph_format.left_indent = indent
                 para.paragraph_format.first_line_indent = Inches(-0.2)
                 _set_para_spacing(para, before=0, after=60)
-                label_run = para.add_run(f"{bullet}  ")
-                label_run.bold = ordered
+                if not (is_task and first_para):
+                    label_run = para.add_run(f"{bullet}  ")
+                    label_run.bold = ordered
+                first_para = False
                 InlineRenderer(para, self.doc).render(inline.children or [])
                 i += 1  # skip paragraph_close
             elif tok.type == "bullet_list_open":
@@ -552,7 +570,8 @@ class MarkdownToDocx:
                     first_para = False
                     parts = raw.split(":", 2)
                     kind = parts[1] if len(parts) > 1 else "note"
-                    title = parts[2].strip() if len(parts) > 2 else kind.upper()
+                    title = parts[2].strip() if len(parts) > 2 else ""
+                    title = title or kind.capitalize()
                     callout_color = CALLOUT_COLOURS.get(kind.lower(), CALLOUT_COLOURS["note"])
                     icons = {
                         "note": "ℹ", "info": "ℹ", "tip": "💡", "success": "✅",
@@ -565,7 +584,7 @@ class MarkdownToDocx:
                     _para_left_border(title_para, callout_color, sz=32)
                     title_para.paragraph_format.left_indent = Inches(0.35)
                     _set_para_spacing(title_para, before=80, after=0)
-                    run = title_para.add_run(f"{icon}  {kind.upper()}: {title}")
+                    run = title_para.add_run(f"{icon}  {title}")
                     run.bold = True
                     run.font.color.rgb = callout_color
                     run.font.size = Pt(10.5)
